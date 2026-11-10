@@ -91,6 +91,8 @@ FK: id_variete → VARIETE(id)
 
 ### 3.1 Création des tables
 
+Les récoltes, ventes, pertes et tarifs forment l'historique comptable : leurs clés étrangères sont en `ON DELETE RESTRICT`, pour qu'une suppression de stock ou de variété ne puisse jamais effacer cet historique.
+
 ```sql
 CREATE TABLE produits (
     id SERIAL PRIMARY KEY,
@@ -117,7 +119,8 @@ CREATE TABLE tarif (
     date_fin DATE,
     marche VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE CASCADE
+    FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE RESTRICT,
+    CHECK (date_fin IS NULL OR date_fin >= date_debut)
 );
 
 CREATE TABLE recolte (
@@ -128,7 +131,7 @@ CREATE TABLE recolte (
     num_lot VARCHAR(50) UNIQUE,
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE CASCADE
+    FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE stock (
@@ -147,7 +150,7 @@ CREATE TABLE vente (
     montant_total DECIMAL(12, 2) GENERATED ALWAYS AS (quantite_kg * prix_unitaire) STORED,
     date_vente DATE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (id_stock) REFERENCES stock(id) ON DELETE CASCADE
+    FOREIGN KEY (id_stock) REFERENCES stock(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE perte (
@@ -157,7 +160,7 @@ CREATE TABLE perte (
     raison_perte VARCHAR(200),
     date_perte DATE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (id_stock) REFERENCES stock(id) ON DELETE CASCADE
+    FOREIGN KEY (id_stock) REFERENCES stock(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE rapport_statistique (
@@ -176,11 +179,11 @@ CREATE TABLE rapport_statistique (
 
 ### 3.2 Indices pour optimisation
 
+Les contraintes `UNIQUE(id_produit, nom_variete)` sur `variete` et `UNIQUE(id_variete)` sur `stock` créent déjà un index : il n'est pas utile d'en ajouter un sur ces colonnes.
+
 ```sql
-CREATE INDEX idx_variete_id_produit ON variete(id_produit);
 CREATE INDEX idx_recolte_id_variete ON recolte(id_variete);
 CREATE INDEX idx_recolte_date ON recolte(date_recolte);
-CREATE INDEX idx_stock_id_variete ON stock(id_variete);
 CREATE INDEX idx_vente_id_stock ON vente(id_stock);
 CREATE INDEX idx_vente_date ON vente(date_vente);
 CREATE INDEX idx_perte_id_stock ON perte(id_stock);
@@ -231,13 +234,15 @@ EXECUTE FUNCTION decremente_stock_perte();
 
 -- ==================== TRIGGER 3 : RECOLTE ====================
 -- Augmentation stock après récolte
+-- Crée la ligne de stock à la première récolte d'une variété
 CREATE OR REPLACE FUNCTION alimente_stock_recolte()
 RETURNS TRIGGER AS $$
 BEGIN
-    UPDATE stock
-    SET quantite_disponible = quantite_disponible + NEW.quantite_kg,
-    derniere_maj = CURRENT_TIMESTAMP
-    WHERE id_variete = NEW.id_variete;
+    INSERT INTO stock (id_variete, quantite_disponible, derniere_maj)
+    VALUES (NEW.id_variete, NEW.quantite_kg, CURRENT_TIMESTAMP)
+    ON CONFLICT (id_variete) DO UPDATE
+    SET quantite_disponible = stock.quantite_disponible + EXCLUDED.quantite_disponible,
+    derniere_maj = CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
