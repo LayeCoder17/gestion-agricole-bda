@@ -7,7 +7,7 @@ Un étudiant-entrepreneur agricole gère une exploitation diversifiée de **10 h
 ---
 
 ## 1. Niveau Conceptuel : Diagramme E-A
-![Diagramme E-A](./documents/diagrammes/ea_diagramme_agri.drawio.png)
+![Diagramme E-A](./diagrammes/ea_diagramme_agri.drawio.png)
 ### Entités principales
 
 - **PRODUITS** : catalogue des produits agricoles
@@ -35,6 +35,7 @@ Un étudiant-entrepreneur agricole gère une exploitation diversifiée de **10 h
 
 ### Schéma relationnel
 
+```text
 PRODUITS(id, nom, description, date_creation)
 PK: id
 
@@ -69,7 +70,7 @@ RAPPORT_STATISTIQUE(id, periode, id_variete, total_recolte_kg, total_vente_kg,
 total_perte_kg, ca_periode, taux_vente_pct, created_at)
 PK: id
 FK: id_variete → VARIETE(id)
-
+```
 
 ### Tableau des entités et attributs
 
@@ -90,90 +91,92 @@ FK: id_variete → VARIETE(id)
 
 ### 3.1 Création des tables
 
+```sql
 CREATE TABLE produits (
-id SERIAL PRIMARY KEY,
-nom VARCHAR(100) NOT NULL UNIQUE,
-description TEXT,
-date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id SERIAL PRIMARY KEY,
+    nom VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE variete (
-id SERIAL PRIMARY KEY,
-id_produit INT NOT NULL,
-nom_variete VARCHAR(100) NOT NULL,
-description TEXT,
-date_ajout TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-FOREIGN KEY (id_produit) REFERENCES produits(id) ON DELETE CASCADE,
-UNIQUE(id_produit, nom_variete)
+    id SERIAL PRIMARY KEY,
+    id_produit INT NOT NULL,
+    nom_variete VARCHAR(100) NOT NULL,
+    description TEXT,
+    date_ajout TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_produit) REFERENCES produits(id) ON DELETE CASCADE,
+    UNIQUE(id_produit, nom_variete)
 );
 
 CREATE TABLE tarif (
-id SERIAL PRIMARY KEY,
-id_variete INT NOT NULL,
-prix_kg DECIMAL(10, 2) NOT NULL CHECK (prix_kg >= 0),
-date_debut DATE NOT NULL,
-date_fin DATE,
-marche VARCHAR(100),
-created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE CASCADE
+    id SERIAL PRIMARY KEY,
+    id_variete INT NOT NULL,
+    prix_kg DECIMAL(10, 2) NOT NULL CHECK (prix_kg >= 0),
+    date_debut DATE NOT NULL,
+    date_fin DATE,
+    marche VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE CASCADE
 );
 
 CREATE TABLE recolte (
-id SERIAL PRIMARY KEY,
-id_variete INT NOT NULL,
-quantite_kg DECIMAL(10, 2) NOT NULL CHECK (quantite_kg > 0),
-date_recolte DATE NOT NULL,
-num_lot VARCHAR(50) UNIQUE,
-description TEXT,
-created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE CASCADE
+    id SERIAL PRIMARY KEY,
+    id_variete INT NOT NULL,
+    quantite_kg DECIMAL(10, 2) NOT NULL CHECK (quantite_kg > 0),
+    date_recolte DATE NOT NULL,
+    num_lot VARCHAR(50) UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE CASCADE
 );
 
 CREATE TABLE stock (
-id SERIAL PRIMARY KEY,
-id_variete INT NOT NULL UNIQUE,
-quantite_disponible DECIMAL(10, 2) NOT NULL DEFAULT 0 CHECK (quantite_disponible >= 0),
-derniere_maj TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE CASCADE
+    id SERIAL PRIMARY KEY,
+    id_variete INT NOT NULL UNIQUE,
+    quantite_disponible DECIMAL(10, 2) NOT NULL DEFAULT 0 CHECK (quantite_disponible >= 0),
+    derniere_maj TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE CASCADE
 );
 
 CREATE TABLE vente (
-id SERIAL PRIMARY KEY,
-id_stock INT NOT NULL,
-quantite_kg DECIMAL(10, 2) NOT NULL CHECK (quantite_kg > 0),
-prix_unitaire DECIMAL(10, 2) NOT NULL CHECK (prix_unitaire >= 0),
-montant_total DECIMAL(12, 2) GENERATED ALWAYS AS (quantite_kg * prix_unitaire) STORED,
-date_vente DATE NOT NULL,
-created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-FOREIGN KEY (id_stock) REFERENCES stock(id) ON DELETE CASCADE
+    id SERIAL PRIMARY KEY,
+    id_stock INT NOT NULL,
+    quantite_kg DECIMAL(10, 2) NOT NULL CHECK (quantite_kg > 0),
+    prix_unitaire DECIMAL(10, 2) NOT NULL CHECK (prix_unitaire >= 0),
+    montant_total DECIMAL(12, 2) GENERATED ALWAYS AS (quantite_kg * prix_unitaire) STORED,
+    date_vente DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_stock) REFERENCES stock(id) ON DELETE CASCADE
 );
 
 CREATE TABLE perte (
-id SERIAL PRIMARY KEY,
-id_stock INT NOT NULL,
-quantite_kg DECIMAL(10, 2) NOT NULL CHECK (quantite_kg > 0),
-raison_perte VARCHAR(200),
-date_perte DATE NOT NULL,
-created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-FOREIGN KEY (id_stock) REFERENCES stock(id) ON DELETE CASCADE
+    id SERIAL PRIMARY KEY,
+    id_stock INT NOT NULL,
+    quantite_kg DECIMAL(10, 2) NOT NULL CHECK (quantite_kg > 0),
+    raison_perte VARCHAR(200),
+    date_perte DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_stock) REFERENCES stock(id) ON DELETE CASCADE
 );
 
 CREATE TABLE rapport_statistique (
-id SERIAL PRIMARY KEY,
-periode VARCHAR(50),
-id_variete INT,
-total_recolte_kg DECIMAL(10, 2),
-total_vente_kg DECIMAL(10, 2),
-total_perte_kg DECIMAL(10, 2),
-ca_periode DECIMAL(12, 2),
-taux_vente_pct DECIMAL(5, 2),
-created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE SET NULL
+    id SERIAL PRIMARY KEY,
+    periode VARCHAR(50),
+    id_variete INT,
+    total_recolte_kg DECIMAL(10, 2),
+    total_vente_kg DECIMAL(10, 2),
+    total_perte_kg DECIMAL(10, 2),
+    ca_periode DECIMAL(12, 2),
+    taux_vente_pct DECIMAL(5, 2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_variete) REFERENCES variete(id) ON DELETE SET NULL
 );
-
+```
 
 ### 3.2 Indices pour optimisation
 
+```sql
 CREATE INDEX idx_variete_id_produit ON variete(id_produit);
 CREATE INDEX idx_recolte_id_variete ON recolte(id_variete);
 CREATE INDEX idx_recolte_date ON recolte(date_recolte);
@@ -183,20 +186,21 @@ CREATE INDEX idx_vente_date ON vente(date_vente);
 CREATE INDEX idx_perte_id_stock ON perte(id_stock);
 CREATE INDEX idx_tarif_id_variete ON tarif(id_variete);
 CREATE INDEX idx_rapport_id_variete ON rapport_statistique(id_variete);
-
+```
 
 ### 3.3 Triggers pour automatisation
 
+```sql
 -- ==================== TRIGGER 1 : VENTE ====================
 -- Décrémentation stock après vente
 CREATE OR REPLACE FUNCTION decremente_stock_vente()
 RETURNS TRIGGER AS $$
 BEGIN
-UPDATE stock
-SET quantite_disponible = quantite_disponible - NEW.quantite_kg,
-derniere_maj = CURRENT_TIMESTAMP
-WHERE id = NEW.id_stock;
-RETURN NEW;
+    UPDATE stock
+    SET quantite_disponible = quantite_disponible - NEW.quantite_kg,
+    derniere_maj = CURRENT_TIMESTAMP
+    WHERE id = NEW.id_stock;
+    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -211,11 +215,11 @@ EXECUTE FUNCTION decremente_stock_vente();
 CREATE OR REPLACE FUNCTION decremente_stock_perte()
 RETURNS TRIGGER AS $$
 BEGIN
-UPDATE stock
-SET quantite_disponible = quantite_disponible - NEW.quantite_kg,
-derniere_maj = CURRENT_TIMESTAMP
-WHERE id = NEW.id_stock;
-RETURN NEW;
+    UPDATE stock
+    SET quantite_disponible = quantite_disponible - NEW.quantite_kg,
+    derniere_maj = CURRENT_TIMESTAMP
+    WHERE id = NEW.id_stock;
+    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -230,11 +234,11 @@ EXECUTE FUNCTION decremente_stock_perte();
 CREATE OR REPLACE FUNCTION alimente_stock_recolte()
 RETURNS TRIGGER AS $$
 BEGIN
-UPDATE stock
-SET quantite_disponible = quantite_disponible + NEW.quantite_kg,
-derniere_maj = CURRENT_TIMESTAMP
-WHERE id_variete = NEW.id_variete;
-RETURN NEW;
+    UPDATE stock
+    SET quantite_disponible = quantite_disponible + NEW.quantite_kg,
+    derniere_maj = CURRENT_TIMESTAMP
+    WHERE id_variete = NEW.id_variete;
+    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -242,4 +246,4 @@ CREATE TRIGGER tr_recolte_stock
 AFTER INSERT ON recolte
 FOR EACH ROW
 EXECUTE FUNCTION alimente_stock_recolte();
-
+```
