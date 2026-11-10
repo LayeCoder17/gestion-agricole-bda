@@ -7,7 +7,77 @@ Un étudiant-entrepreneur agricole gère une exploitation diversifiée de **10 h
 ---
 
 ## 1. Niveau Conceptuel : Diagramme E-A
-![Diagramme E-A](./diagrammes/ea_diagramme_agri.drawio.png)
+
+```mermaid
+erDiagram
+    PRODUITS ||--|{ VARIETE : "se décline en"
+    VARIETE ||--o{ TARIF : "a pour prix"
+    VARIETE ||--o{ RECOLTE : "est récoltée"
+    VARIETE ||--o| STOCK : "est stockée"
+    STOCK ||--o{ VENTE : "est vendu"
+    STOCK ||--o{ PERTE : "subit"
+    VARIETE |o--o{ RAPPORT_STATISTIQUE : "est résumée par"
+
+    PRODUITS {
+        int id PK
+        varchar nom UK
+        text description
+        timestamp date_creation
+    }
+    VARIETE {
+        int id PK
+        int id_produit FK
+        varchar nom_variete
+        text description
+        timestamp date_ajout
+    }
+    TARIF {
+        int id PK
+        int id_variete FK
+        decimal prix_kg
+        date date_debut
+        date date_fin
+        varchar marche
+    }
+    RECOLTE {
+        int id PK
+        int id_variete FK
+        decimal quantite_kg
+        date date_recolte
+        varchar num_lot UK
+    }
+    STOCK {
+        int id PK
+        int id_variete FK,UK
+        decimal quantite_disponible
+        timestamp derniere_maj
+    }
+    VENTE {
+        int id PK
+        int id_stock FK
+        decimal quantite_kg
+        decimal prix_unitaire
+        decimal montant_total "colonne générée"
+        date date_vente
+    }
+    PERTE {
+        int id PK
+        int id_stock FK
+        decimal quantite_kg
+        varchar raison_perte
+        date date_perte
+    }
+    RAPPORT_STATISTIQUE {
+        int id PK
+        int id_variete FK
+        varchar periode
+        decimal total_recolte_kg
+        decimal total_vente_kg
+        decimal total_perte_kg
+        decimal ca_periode
+        decimal taux_vente_pct
+    }
+```
 ### Entités principales
 
 - **PRODUITS** : catalogue des produits agricoles
@@ -21,8 +91,17 @@ Un étudiant-entrepreneur agricole gère une exploitation diversifiée de **10 h
 
 ### Cardinalités principales
 
-| Relation | Signification |
-|----------|---------------|
+| Relation | Cardinalités | Signification |
+|----------|--------------|---------------|
+| PRODUITS — VARIETE | (1,N) — (1,1) | Un produit a une ou plusieurs variétés ; une variété appartient à un seul produit |
+| VARIETE — TARIF | (0,N) — (1,1) | Le prix d'une variété change dans le temps ; chaque tarif concerne une seule variété |
+| VARIETE — RECOLTE | (0,N) — (1,1) | Une variété est récoltée plusieurs fois ; chaque récolte concerne une seule variété |
+| VARIETE — STOCK | (0,1) — (1,1) | Une variété a au plus un stock, créé à sa première récolte |
+| STOCK — VENTE | (0,N) — (1,1) | Un stock est vendu en plusieurs fois ; chaque vente puise dans un seul stock |
+| STOCK — PERTE | (0,N) — (1,1) | Un stock peut subir plusieurs pertes ; chaque perte concerne un seul stock |
+| VARIETE — RAPPORT_STATISTIQUE | (0,N) — (0,1) | Un rapport porte sur une variété, ou sur toute l'exploitation si la variété est vide |
+
+----------|---------------|
 | PRODUITS (1,N) VARIETE | Un produit a plusieurs variétés |
 | VARIETE (1,N) RECOLTE | Une variété peut être récoltée |
 | RECOLTE (1,N) STOCK | Une récolte alimente le stock |
@@ -88,6 +167,8 @@ FK: id_variete → VARIETE(id)
 ---
 
 ## 3. Niveau Physique : Scripts SQL (PostgreSQL)
+
+Les scripts ci-dessous sont aussi rassemblés dans [`../database/schema.sql`](../database/schema.sql), prêt à exécuter : `psql -d ma_base -f database/schema.sql`.
 
 ### 3.1 Création des tables
 
@@ -193,62 +274,78 @@ CREATE INDEX idx_rapport_id_variete ON rapport_statistique(id_variete);
 
 ### 3.3 Triggers pour automatisation
 
+Le stock se tient à jour tout seul. Une récolte l'augmente, une vente ou une perte le diminue. Si une écriture est modifiée ou supprimée, son effet est d'abord annulé, puis la nouvelle valeur est appliquée. Comme le stock ne peut pas être négatif, toute opération qui ferait vendre plus que ce qui reste est refusée, et PostgreSQL annule l'opération entière.
+
 ```sql
--- ==================== TRIGGER 1 : VENTE ====================
--- Décrémentation stock après vente
-CREATE OR REPLACE FUNCTION decremente_stock_vente()
+-- ==================== SORTIES : VENTE ET PERTE ====================
+-- Une vente et une perte retirent toutes deux une quantité du stock
+CREATE OR REPLACE FUNCTION maj_stock_sortie()
 RETURNS TRIGGER AS $$
 BEGIN
-    UPDATE stock
-    SET quantite_disponible = quantite_disponible - NEW.quantite_kg,
-    derniere_maj = CURRENT_TIMESTAMP
-    WHERE id = NEW.id_stock;
-    RETURN NEW;
+    -- Modification ou suppression : on rend d'abord l'ancienne quantité
+    IF TG_OP IN ('UPDATE', 'DELETE') THEN
+        UPDATE stock
+        SET quantite_disponible = quantite_disponible + OLD.quantite_kg,
+            derniere_maj = CURRENT_TIMESTAMP
+        WHERE id = OLD.id_stock;
+    END IF;
+    -- Ajout ou modification : on retire la nouvelle quantité
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        UPDATE stock
+        SET quantite_disponible = quantite_disponible - NEW.quantite_kg,
+            derniere_maj = CURRENT_TIMESTAMP
+        WHERE id = NEW.id_stock;
+    END IF;
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER tr_vente_stock
-AFTER INSERT ON vente
+AFTER INSERT OR UPDATE OR DELETE ON vente
 FOR EACH ROW
-EXECUTE FUNCTION decremente_stock_vente();
-
-
--- ==================== TRIGGER 2 : PERTE ====================
--- Décrémentation stock après perte
-CREATE OR REPLACE FUNCTION decremente_stock_perte()
-RETURNS TRIGGER AS $$
-BEGIN
-    UPDATE stock
-    SET quantite_disponible = quantite_disponible - NEW.quantite_kg,
-    derniere_maj = CURRENT_TIMESTAMP
-    WHERE id = NEW.id_stock;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+EXECUTE FUNCTION maj_stock_sortie();
 
 CREATE TRIGGER tr_perte_stock
-AFTER INSERT ON perte
+AFTER INSERT OR UPDATE OR DELETE ON perte
 FOR EACH ROW
-EXECUTE FUNCTION decremente_stock_perte();
+EXECUTE FUNCTION maj_stock_sortie();
 
 
--- ==================== TRIGGER 3 : RECOLTE ====================
--- Augmentation stock après récolte
--- Crée la ligne de stock à la première récolte d'une variété
-CREATE OR REPLACE FUNCTION alimente_stock_recolte()
+-- ==================== ENTRÉES : RÉCOLTE ====================
+-- Une récolte ajoute au stock de sa variété, et crée ce stock à la première récolte
+CREATE OR REPLACE FUNCTION maj_stock_recolte()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO stock (id_variete, quantite_disponible, derniere_maj)
-    VALUES (NEW.id_variete, NEW.quantite_kg, CURRENT_TIMESTAMP)
-    ON CONFLICT (id_variete) DO UPDATE
-    SET quantite_disponible = stock.quantite_disponible + EXCLUDED.quantite_disponible,
-    derniere_maj = CURRENT_TIMESTAMP;
-    RETURN NEW;
+    -- Quantité corrigée sur la même variété : on applique seulement la différence,
+    -- pour ne pas faire passer le stock sous zéro entre les deux étapes
+    IF TG_OP = 'UPDATE' AND OLD.id_variete = NEW.id_variete THEN
+        UPDATE stock
+        SET quantite_disponible = quantite_disponible + NEW.quantite_kg - OLD.quantite_kg,
+            derniere_maj = CURRENT_TIMESTAMP
+        WHERE id_variete = NEW.id_variete;
+        RETURN NULL;
+    END IF;
+    -- Suppression, ou changement de variété : on retire l'ancienne quantité
+    IF TG_OP IN ('UPDATE', 'DELETE') THEN
+        UPDATE stock
+        SET quantite_disponible = quantite_disponible - OLD.quantite_kg,
+            derniere_maj = CURRENT_TIMESTAMP
+        WHERE id_variete = OLD.id_variete;
+    END IF;
+    -- Ajout, ou changement de variété : on ajoute la nouvelle quantité
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        INSERT INTO stock (id_variete, quantite_disponible, derniere_maj)
+        VALUES (NEW.id_variete, NEW.quantite_kg, CURRENT_TIMESTAMP)
+        ON CONFLICT (id_variete) DO UPDATE
+        SET quantite_disponible = stock.quantite_disponible + EXCLUDED.quantite_disponible,
+            derniere_maj = CURRENT_TIMESTAMP;
+    END IF;
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER tr_recolte_stock
-AFTER INSERT ON recolte
+AFTER INSERT OR UPDATE OR DELETE ON recolte
 FOR EACH ROW
-EXECUTE FUNCTION alimente_stock_recolte();
+EXECUTE FUNCTION maj_stock_recolte();
 ```
